@@ -1,0 +1,4 @@
+baseURL = "https://blog.davidsierra.dev/"
+languageCode = "en-us"
+title = "davidsierradz blog"
+theme = "etch"
