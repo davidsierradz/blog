@@ -1,0 +1,107 @@
+<!doctype html><html><head><meta charset=utf-8><meta name=viewport content="width=device-width,initial-scale=1"><meta name=description content="Things I consider interesting"><link rel="shortcut icon" href=https://blog.davidsierra.dev/favicon.ico><link rel=stylesheet href=/css/style.min.css><title>Connect two NGINX's through UNIX sockets</title></head><body><header id=banner><h2><a href=https://blog.davidsierra.dev/>blog</a></h2><nav><ul></ul></nav></header><main id=content><article><header id=post-header><h1>Connect two NGINX's through UNIX sockets</h1><div><time>April 30, 2021</time></div></header><h2 id=introduction>Introduction</h2><p>Normally, you would use TCP/IP to connect an instance of NGINX with some other service (another NGINX or a web server listening through some IP address). This is powerful and pretty flexible, but sometimes you want something more lightweight and don&rsquo;t need to use the network stack (because you are connecting two services running under the same machine).</p><p>This is were UDS (UNIX Domain Sockets) can serve as an inter-process communication mechanism between your two services, allowing you to bypass the overhead of the TCP/IP protocol.</p><p>Why would you want to have two instances of NGINX running in the same machine anyway? Well, suppose you have an instance as an entry-point where you load the SSL certificates and proxy the requests to another NGINX serving a <em>react</em> or <em>PHP</em> application. Or because you can&rsquo;t refactor your architecture and need to put an additional system somewhere (no shaming).</p><h2 id=wishful-thinking>Wishful Thinking</h2><p>Let&rsquo;s use docker (with compose) to run our services in an easy way:</p><div class=highlight><pre style=color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4><code class=language-text data-lang=text>          +--------+           +--------+
+   HTTP   |        |    UDS    |        |
++---------+ nginx1 +-----------+ nginx2 |
+          |        |           |        |
+          +--------+           +--------+
+</code></pre></div><p><code>nginx1</code> is listening on a TCP/IP address like <code>127.0.0.1:80</code> and <code>nginx2</code> is listening on a UNIX socket like <code>/tmp/nginx.sock</code>, we want to make an HTTP request to <code>nginx1</code> who should pass it to <code>nginx2</code> through the socket, <code>nginx2</code> will return a response in the form of an HTML document.</p><h2 id=implementation>Implementation</h2><p>Let&rsquo;s start with this folder structure:</p><div class=highlight><pre style=color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4><code class=language-sh data-lang=sh>.
+├── docker-compose.yml
+└── templates
+    ├── nginx1
+    │   └── default.conf.template
+    └── nginx2
+        └── default.conf.template
+</code></pre></div><p>Where, <code>docker-compose.yml</code>:</p><div class=highlight><pre style=color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4><code class=language-yml data-lang=yml><span style=color:#f92672>version</span>: <span style=color:#e6db74>&#39;3&#39;</span>
+
+<span style=color:#f92672>volumes</span>:
+  <span style=color:#f92672>data</span>:
+
+<span style=color:#f92672>services</span>:
+  <span style=color:#f92672>nginx1</span>:
+    <span style=color:#f92672>image</span>: <span style=color:#ae81ff>nginx</span>
+    <span style=color:#f92672>ports</span>:
+      - <span style=color:#e6db74>&#39;127.0.0.1:80:80&#39;</span>
+    <span style=color:#f92672>volumes</span>:
+      - <span style=color:#f92672>type</span>: <span style=color:#ae81ff>volume</span>
+        <span style=color:#f92672>source</span>: <span style=color:#ae81ff>data</span>
+        <span style=color:#f92672>target</span>: <span style=color:#ae81ff>/tmp</span>
+      - <span style=color:#f92672>type</span>: <span style=color:#ae81ff>bind</span>
+        <span style=color:#f92672>source</span>: <span style=color:#ae81ff>./templates/nginx1</span>
+        <span style=color:#f92672>target</span>: <span style=color:#ae81ff>/etc/nginx/templates</span>
+
+  <span style=color:#f92672>nginx2</span>:
+    <span style=color:#f92672>image</span>: <span style=color:#ae81ff>nginx</span>
+    <span style=color:#f92672>volumes</span>:
+      - <span style=color:#f92672>type</span>: <span style=color:#ae81ff>volume</span>
+        <span style=color:#f92672>source</span>: <span style=color:#ae81ff>data</span>
+        <span style=color:#f92672>target</span>: <span style=color:#ae81ff>/tmp</span>
+      - <span style=color:#f92672>type</span>: <span style=color:#ae81ff>bind</span>
+        <span style=color:#f92672>source</span>: <span style=color:#ae81ff>./templates/nginx2</span>
+        <span style=color:#f92672>target</span>: <span style=color:#ae81ff>/etc/nginx/templates</span>
+</code></pre></div><p>Hopefully, this is self-explanatory. We&rsquo;re declaring two services based on <a href=https://hub.docker.com/_/nginx>nginx</a> (<code>nginx1</code> and <code>nginx2</code>), <code>nginx1</code> is listening in the host machine on <code>127.0.0.1:80</code> and there is one shared volume named <code>data</code> between the two containers. Also bindings to allow NGINX to configure themselves through templates.</p><p>The file <code>./templates/nginx1/default.conf.template</code>:</p><div class=highlight><pre style=color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4><code class=language-nginx data-lang=nginx><span style=color:#66d9ef>server</span> {
+  <span style=color:#f92672>listen</span> <span style=color:#ae81ff>80</span>;
+
+  <span style=color:#f92672>location</span> <span style=color:#e6db74>/</span> {
+    <span style=color:#f92672>proxy_pass</span> <span style=color:#e6db74>http://unix:/tmp/nginx.sock</span>;
+  }
+}
+</code></pre></div><p>The configuration for <code>nginx1</code> declares a server directive that listen on port 80 and redirect the incoming request through the UNIX socket called <code>/tmp/nginx.sock</code>.</p><p>The file <code>./templates/nginx2/default.conf.template</code>:</p><div class=highlight><pre style=color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4><code class=language-nginx data-lang=nginx><span style=color:#66d9ef>server</span> {
+  <span style=color:#f92672>listen</span> <span style=color:#e6db74>unix:/tmp/nginx.sock</span>;
+
+  <span style=color:#f92672>location</span> <span style=color:#e6db74>/</span> {
+    <span style=color:#f92672>root</span>   <span style=color:#e6db74>/usr/share/nginx/html</span>;
+    <span style=color:#f92672>index</span>  <span style=color:#e6db74>index.html</span> <span style=color:#e6db74>index.htm</span>;
+  }
+}
+</code></pre></div><p>The configuration for <code>nginx2</code> creates the UNIX socket on <code>/tmp/nginx.sock</code>, listens on it and serves the default <code>index.html</code> file in <code>/usr/share/nginx/html</code>.</p><p>A little disadvantage when using UNIX sockets is that the two NGINX&rsquo;s needs to share the socket through the file-system, thats what the volume <code>data</code> is for.</p><p>We&rsquo;re ready to start the services and test them:</p><div class=highlight><pre style=color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4><code class=language-sh data-lang=sh>$ docker-compose up
+
+Starting nginx2_1 ... <span style=color:#66d9ef>done</span>
+Starting nginx1_1 ... <span style=color:#66d9ef>done</span>
+Attaching to nginx2_1, nginx1_1
+nginx1_1  | /docker-entrypoint.sh: /docker-entrypoint.d/ is not empty, will attempt to perform configuration
+nginx1_1  | /docker-entrypoint.sh: Looking <span style=color:#66d9ef>for</span> shell scripts in /docker-entrypoint.d/
+nginx1_1  | /docker-entrypoint.sh: Launching /docker-entrypoint.d/10-listen-on-ipv6-by-default.sh
+nginx2_1  | /docker-entrypoint.sh: /docker-entrypoint.d/ is not empty, will attempt to perform configuration
+nginx2_1  | /docker-entrypoint.sh: Looking <span style=color:#66d9ef>for</span> shell scripts in /docker-entrypoint.d/
+nginx2_1  | /docker-entrypoint.sh: Launching /docker-entrypoint.d/10-listen-on-ipv6-by-default.sh
+nginx1_1  | 10-listen-on-ipv6-by-default.sh: info: Getting the checksum of /etc/nginx/conf.d/default.conf
+nginx2_1  | 10-listen-on-ipv6-by-default.sh: info: Getting the checksum of /etc/nginx/conf.d/default.conf
+nginx1_1  | 10-listen-on-ipv6-by-default.sh: info: /etc/nginx/conf.d/default.conf differs from the packaged version
+nginx2_1  | 10-listen-on-ipv6-by-default.sh: info: /etc/nginx/conf.d/default.conf differs from the packaged version
+nginx2_1  | /docker-entrypoint.sh: Launching /docker-entrypoint.d/20-envsubst-on-templates.sh
+nginx1_1  | /docker-entrypoint.sh: Launching /docker-entrypoint.d/20-envsubst-on-templates.sh
+nginx2_1  | 20-envsubst-on-templates.sh: Running envsubst on /etc/nginx/templates/default.conf.template to /etc/nginx/conf.d/default.conf
+nginx1_1  | 20-envsubst-on-templates.sh: Running envsubst on /etc/nginx/templates/default.conf.template to /etc/nginx/conf.d/default.conf
+nginx2_1  | /docker-entrypoint.sh: Launching /docker-entrypoint.d/30-tune-worker-processes.sh
+nginx1_1  | /docker-entrypoint.sh: Launching /docker-entrypoint.d/30-tune-worker-processes.sh
+nginx2_1  | /docker-entrypoint.sh: Configuration complete; ready <span style=color:#66d9ef>for</span> start up
+nginx1_1  | /docker-entrypoint.sh: Configuration complete; ready <span style=color:#66d9ef>for</span> start up
+</code></pre></div><p>Our containers are ready. Fire a request to <code>localhost</code> in your browser (or with <code>curl</code>):</p><div class=highlight><pre style=color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4><code class=language-sh data-lang=sh>$ curl localhost
+
+&lt;!DOCTYPE html&gt;
+&lt;html&gt;
+&lt;head&gt;
+&lt;title&gt;Welcome to nginx!&lt;/title&gt;
+&lt;style&gt;
+    body <span style=color:#f92672>{</span>
+        width: 35em;
+        margin: <span style=color:#ae81ff>0</span> auto;
+        font-family: Tahoma, Verdana, Arial, sans-serif;
+    <span style=color:#f92672>}</span>
+&lt;/style&gt;
+&lt;/head&gt;
+&lt;body&gt;
+&lt;h1&gt;Welcome to nginx!&lt;/h1&gt;
+&lt;p&gt;If you see this page, the nginx web server is successfully installed and
+working. Further configuration is required.&lt;/p&gt;
+
+&lt;p&gt;For online documentation and support please refer to
+&lt;a href<span style=color:#f92672>=</span><span style=color:#e6db74>&#34;http://nginx.org/&#34;</span>&gt;nginx.org&lt;/a&gt;.&lt;br/&gt;
+Commercial support is available at
+&lt;a href<span style=color:#f92672>=</span><span style=color:#e6db74>&#34;http://nginx.com/&#34;</span>&gt;nginx.com&lt;/a&gt;.&lt;/p&gt;
+
+&lt;p&gt;&lt;em&gt;Thank you <span style=color:#66d9ef>for</span> using nginx.&lt;/em&gt;&lt;/p&gt;
+&lt;/body&gt;
+&lt;/html&gt;
+</code></pre></div><p>Nice! We got the default NGINX welcome document.</p><p>We can see the logs from <code>stdout</code> in the <code>docker-compose up</code> command:</p><div class=highlight><pre style=color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4><code class=language-sh data-lang=sh>nginx1_1  | 172.21.0.1 - - <span style=color:#f92672>[</span>30/Apr/2021:23:13:37 +0000<span style=color:#f92672>]</span> <span style=color:#e6db74>&#34;GET / HTTP/1.1&#34;</span> <span style=color:#ae81ff>200</span> <span style=color:#ae81ff>612</span> <span style=color:#e6db74>&#34;-&#34;</span> <span style=color:#e6db74>&#34;curl/7.76.1&#34;</span> <span style=color:#e6db74>&#34;-&#34;</span>
+nginx2_1  | unix: - - <span style=color:#f92672>[</span>30/Apr/2021:23:13:37 +0000<span style=color:#f92672>]</span> <span style=color:#e6db74>&#34;GET / HTTP/1.0&#34;</span> <span style=color:#ae81ff>200</span> <span style=color:#ae81ff>612</span> <span style=color:#e6db74>&#34;-&#34;</span> <span style=color:#e6db74>&#34;curl/7.76.1&#34;</span> <span style=color:#e6db74>&#34;-&#34;</span>
+</code></pre></div><p><code>nginx1</code> receive the request from an IP address (<code>172.21.0.1</code>) and <code>nginx2</code> from a UNIX connection (<code>unix</code>).</p><p>The code can be found in <a href=https://github.com/davidsierradz/connect-nginxs-through-sockets>davidsierradz/connect-nginxs-through-sockets</a>.</p><h2 id=references>References</h2><ul><li><a href=https://nginx.org/en/docs/http/ngx_http_proxy_module.html#proxy_pass>NGINX proxy_pass</a></li><li><a href=http://nginx.org/en/docs/http/ngx_http_core_module.html#listen>NGINX listen</a></li></ul></article></main><footer id=footer>Copyright © 2021 David Balam Sierra DiazGranados</footer></body></html>
