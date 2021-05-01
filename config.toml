@@ -1,4 +1,10 @@
 baseURL = "https://blog.davidsierra.dev/"
 languageCode = "en-us"
-title = "davidsierradz blog"
+title = "blog"
 theme = "etch"
+
+[params]
+  description = "Things I consider interesting"
+  copyright = "Copyright © 2021 David Balam Sierra DiazGranados"
+  dark = "auto"
+  highlight = true
