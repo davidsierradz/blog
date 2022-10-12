@@ -1,0 +1,15 @@
+baseURL = './'
+languageCode = "en-us"
+title = "blog"
+theme = "etch"
+
+[params]
+  description = "Things I consider interesting"
+  copyright = "Copyright © 2022 David Balam Sierra DiazGranados"
+  dark = "auto"
+  highlight = true
+
+[minify]
+  [minify.tdewolff]
+    [minify.tdewolff.html]
+      keepQuotes = true

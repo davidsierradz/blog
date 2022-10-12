@@ -15,6 +15,22 @@
         "type": "github"
       }
     },
+    "hugo-theme-etch": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1665033470,
+        "narHash": "sha256-oNOL2JYYsKVAZEYWrExHkmrndxmLm75TvgTzFzl7+VA=",
+        "owner": "LukasJoswiak",
+        "repo": "etch",
+        "rev": "0a8754ea1154a8b676a550e4ea347132d42938b2",
+        "type": "github"
+      },
+      "original": {
+        "owner": "LukasJoswiak",
+        "repo": "etch",
+        "type": "github"
+      }
+    },
     "nixpkgs": {
       "locked": {
         "lastModified": 1665483364,
@@ -34,6 +50,7 @@
     "root": {
       "inputs": {
         "flake-utils": "flake-utils",
+        "hugo-theme-etch": "hugo-theme-etch",
         "nixpkgs": "nixpkgs"
       }
     }
