@@ -1,5 +1,5 @@
 {
-  description = "A basic flake with a shell";
+  description = "My Hugo Blog as a Nix Flake";
   inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
   inputs.flake-utils.url = "github:numtide/flake-utils";
   inputs.hugo-theme-etch = {
