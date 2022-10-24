@@ -33,6 +33,18 @@
           platforms = platforms.all;
         };
       };
+      packages.home = pkgs.stdenv.mkDerivation {
+        name = "home";
+        src = ./home;
+        installPhase = ''
+          cp -r . $out
+        '';
+        meta = with pkgs.lib; {
+          description = "My personal Website";
+          license = licenses.mit;
+          platforms = platforms.all;
+        };
+      };
       devShell = pkgs.mkShell {
         nativeBuildInputs = [pkgs.hugo];
         buildInputs = [];
